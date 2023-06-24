@@ -46,11 +46,12 @@ async function run() {
     try {
      app.get('/garages',async(req,res)=>{  
       const locations=req.query.location;
+    const services=req.query.service
       
-     console.log(locations);
+     console.log(locations,services);
       if(locations){
       
-        const query={location:locations}
+          const query={location:locations,services:{$elemMatch:{name:services}}}
         console.log(query);
         const result= await garagesCollection.find(query).toArray()
         // res.send(result)
@@ -266,6 +267,12 @@ async function run() {
       const query={email:email}
       const admin= await usersCollection.findOne(query)
       res.send({isAdmin:admin?.role === 'Admin'})
+    })
+    app.get('/user/admin/garage/:email',async(req,res)=>{
+      const email=req.params.email;
+      const query={email:email}
+      const garage= await usersCollection.findOne(query)
+      res.send({isGarage:garage?.role === 'Garage'})
     })
    
     } finally {
