@@ -3,12 +3,51 @@ const app = express()
 const port = 5000
 const cors= require('cors')
 const jwt = require('jsonwebtoken');
+const SSLCommerzPayment = require('sslcommerz-lts')
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config()
+const nodemailer = require("nodemailer");
+const mg = require('nodemailer-mailgun-transport');
 
 app.use(express.json())
 app.use(cors())
+  
+const auth = {
+  auth: {
+    api_key: process.env.STORE_API_KEY,
+    domain: process.env.STORE_DOMAIN,
+  }
+}  
+const transporter = nodemailer.createTransport(mg(auth));
 
+const sendEmail=(payment)=>{
+  transporter.sendMail({
+    from: "jobaersiddique28me@gmail.com", // verified sender email
+    to: payment.CustomerEmail, // recipient email
+    subject: "Your Payment is Successfully Done", // Subject line
+    text: "Hello world!", // plain text body
+    html: `<div> <h1>Your Payment is Successfully Done</h1></div><br>
+    <div><h2>Your transactionId : ${payment.transactionId}</h2> </div>
+    <div> <p>Your ServiceProvider : ${payment.providerName}</p>
+    <p>Your Service is : ${payment.serviceName}</p>
+    <h3> Payment Time : ${payment.createdAt}</h3>
+    <h3> Your Booking Id : ${payment._id}</h3>
+    <p> Thanks For Using Taqwaa service Provider Web Site</p>
+    <p> Please Tell me about Your Service at Review Section at Our Website</p>
 
+    </div>
+    
+   
+    
+    `, // html body
+  }, function(error, info){
+    if (error) {
+      console.log(error);
+    } else {
+      console.log('Email sent: ' + info.response);
+    }
+  });
+}
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 // const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qc6crda.mongodb.net/?retryWrites=true&w=majority`;
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.qc6crda.mongodb.net/?retryWrites=true&w=majority`;
@@ -22,11 +61,17 @@ const client = new MongoClient(uri, {
   }
 });
 
+const store_id = process.env.STORE_ID
+const store_passwd = process.env.STORE_PASS
+const is_live = false //true for live, false for sandbox
+console.log(store_id,store_passwd);
 
 const garagesCollection = client.db('taqwaa_service').collection('garages')
 const usersCollection = client.db('taqwaa_service').collection('users')
 const servicesCollection = client.db('taqwaa_service').collection('services')
 const bookingsCollection = client.db('taqwaa_service').collection('booked')
+const paymentCollection = client.db('taqwaa_service').collection('payment')
+const ratingCollection = client.db('taqwaa_service').collection('rating')
  function verfiyJwt(req,res,next){
     const authHeader = req.headers.authorizaion
     if(!authHeader){
@@ -44,14 +89,30 @@ const bookingsCollection = client.db('taqwaa_service').collection('booked')
 
 async function run() {
     try {
-     app.get('/garages',async(req,res)=>{  
+    app.post('/garages',async(req,res)=>{
+      const query=req.body;
+    
+      const added = await garagesCollection.insertMany(query)
+      res.send(added)
+    })
+     
+      app.get('/garages',async(req,res)=>{  
       const locations=req.query.location;
     const services=req.query.service
+    const email=req.query.email;
+    console.log(email);
       
+    if(email){
+      const query={email:email}
+      const filter = await garagesCollection.find(query).toArray()
+      console.log('garage',filter);
+      return res.send(filter)
+      
+    }
      console.log(locations,services);
-      if(locations){
+      if(locations  ){
       
-          const query={location:locations,services:{$elemMatch:{name:services}}}
+          const query={location:locations}
         console.log(query);
         const result= await garagesCollection.find(query).toArray()
         // res.send(result)
@@ -133,7 +194,7 @@ async function run() {
     app.get('/booked',verfiyJwt,async(req,res)=>{
       const email=req.query.email
       const decodedEmail = req.decoded.email;
-      console.log(email)
+      
       // if(email !==decodedEmail){
       //   return res.status(403).send('Forbidden Access')
       // }
@@ -168,12 +229,34 @@ async function run() {
        
     })
 
+    // garage single order
+
+    app.get('/garageOrder',async(req,res)=>{
+      const providerName=req.query.providerName;
+      if(providerName){
+        const queries={providerName:providerName}
+      const result= await bookingsCollection.find(queries).toArray()
+      console.log(result);
+      return res.send(result)
+      }
+
+    })
+
     app.get('/allOrders',verfiyJwt,async(req,res)=>{
       const queries={}
       const results = await bookingsCollection.find(queries).toArray()
       res.send(results)
     })
 
+
+    // single booked order info
+    app.get('/booked/:id',async(req,res)=>{
+      const id =req.params.id
+      const query={_id:new ObjectId(id)}
+      const findItems = await bookingsCollection.findOne(query)
+      console.log(findItems);
+      res.send(findItems)
+    })
     app.delete('/booked/:id', async(req,res)=>{
       const id= req.params.id;
       const query = {_id:new ObjectId(id)}
@@ -273,6 +356,111 @@ async function run() {
       const query={email:email}
       const garage= await usersCollection.findOne(query)
       res.send({isGarage:garage?.role === 'Garage'})
+    })
+
+
+    // user rating
+    app.post('/ratings',async(req,res)=>{
+      const query=req.body;
+      const result = await ratingCollection.insertOne(query)
+      res.send(result)
+    })
+     app.get('/rating',async(req,res)=>{
+      const query={}
+      const result = await ratingCollection.find(query).toArray()
+      res.send(result)
+     })
+    // payment Section
+    const trans_id=new ObjectId().toString();
+    app.post('/payment',async(req,res)=>{
+    const{total_amount,cus_name,cus_email,phone,product_category,product_id}=req.body
+    const productsDetails= await bookingsCollection.findOne({_id:new ObjectId(product_id)})
+    console.log(productsDetails);
+    const data = {
+      total_amount: productsDetails.price,
+      currency: 'BDT',
+      tran_id:  trans_id, // use unique tran_id for each api call
+      success_url: `http://localhost:5000/payment/success/${trans_id}`,
+      fail_url: `http://localhost:5000/payment/failed/${trans_id}`,
+      cancel_url: 'http://localhost:3030/cancel',
+      ipn_url: 'http://localhost:3030/ipn',
+      shipping_method: 'Courier',
+      product_name: 'Computer.',
+      product_category: productsDetails.serviceName,
+      product_profile: 'general',
+      cus_name: productsDetails.CustomerName,
+      cus_email: productsDetails.CustomerEmail,
+      cus_add1: 'Dhaka',
+      cus_add2: 'Dhaka',
+      cus_city: 'Dhaka',
+      cus_state: 'Dhaka',
+      cus_postcode: '1000',
+      cus_country: 'Bangladesh',
+      cus_phone: productsDetails.Phone,
+      cus_fax: '01711111111',
+      ship_name: 'Customer Name',
+      ship_add1: 'Dhaka',
+      ship_add2: 'Dhaka',
+      ship_city: 'Dhaka',
+      ship_state: 'Dhaka',
+      ship_postcode: 1000,
+      ship_country: 'Bangladesh',
+      product_id:productsDetails._id
+  };
+  console.log('price',data);
+  
+  const sslcz = new SSLCommerzPayment(process.env.STORE_ID, process.env.STORE_PASS, false)
+  sslcz.init(data).then(apiResponse => {
+      // Redirect the user to payment gateway
+      let GatewayPageURL = apiResponse.GatewayPageURL
+      // res.redirect(GatewayPageURL)
+      res.send({url:GatewayPageURL})
+
+     const query = {_id: new ObjectId(productsDetails._id)}
+     const options = { upsert: true };
+     const updateDoc = {
+      $set:{
+        paid:false,
+        transactionId:trans_id,
+        createdAt: new Date().toLocaleTimeString()
+      }
+    }
+    const payment=  bookingsCollection.updateOne(query,updateDoc,options)
+    
+      console.log('Redirecting to: ', GatewayPageURL)
+  });
+    })
+
+    app.post('/payment/success/:transId',async(req,res)=>{
+      console.log(req.params.transId);
+      const result = await bookingsCollection.updateOne({transactionId:req.params.transId},{
+        $set:{
+          paid:true,
+        
+
+        },
+      })
+      
+      if(result.modifiedCount>0){
+        const payment = await bookingsCollection.findOne({transactionId:req.params.transId})
+        sendEmail(payment)
+        res.redirect(`http://localhost:3000/payment/success/${req.params.transId}`)
+      }
+    })
+    app.post('/payment/failed/:transId',async(req,res)=>{
+      console.log(req.params.transId);
+      const result = await bookingsCollection.updateOne({transactionId:req.params.transId},{
+        $set:{
+          paid:false,
+        
+
+        },
+      })
+      
+      if(result.modifiedCount>0){
+      
+        res.redirect(`http://localhost:3000/payment/failed/${req.params.transId}`)
+      }
     })
    
     } finally {
