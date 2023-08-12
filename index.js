@@ -443,6 +443,7 @@ async function run() {
       
       if(result.modifiedCount>0){
         const payment = await bookingsCollection.findOne({transactionId:req.params.transId})
+        const allpayment= await paymentCollection.insertOne(payment)
         sendEmail(payment)
         res.redirect(`http://localhost:3000/payment/success/${req.params.transId}`)
       }
@@ -461,6 +462,36 @@ async function run() {
       
         res.redirect(`http://localhost:3000/payment/failed/${req.params.transId}`)
       }
+    })
+    app.get('/allpayment',async(req,res)=>{
+      const services= await paymentCollection.estimatedDocumentCount()
+      const users = await usersCollection.estimatedDocumentCount()
+      const totalServices = await servicesCollection.estimatedDocumentCount()
+      const totalGarage = await garagesCollection.estimatedDocumentCount()
+    // res.send({
+    //   services,
+    //   users,
+    //   totalServices,totalGarage
+    // })
+    
+ 
+     const payment = await paymentCollection.aggregate([
+      {
+        $group:
+          /**
+           * _id: The id of the group.
+           * fieldN: The first field name.
+           */
+          {
+            _id: null,
+            TotalPrice: {
+              $sum: "$price",
+            },
+          },
+      },
+    ]).toArray()
+     res.send({payment,totalServices,totalGarage,services,users})
+      
     })
    
     } finally {
