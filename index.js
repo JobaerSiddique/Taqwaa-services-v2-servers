@@ -473,8 +473,6 @@ async function run() {
       const result = await bookingsCollection.updateOne({transactionId:req.params.transId},{
         $set:{
           paid:true,
-        
-
         },
       })
       
@@ -490,8 +488,6 @@ async function run() {
       const result = await bookingsCollection.updateOne({transactionId:req.params.transId},{
         $set:{
           paid:false,
-        
-
         },
       })
       
@@ -541,7 +537,7 @@ async function run() {
           },
       },{
         $project:{
-        providerName:"$_id",
+        providerName:"$providerName",
           Totalprice:1,
           reducePrice:{
             $subtract:[
@@ -556,7 +552,7 @@ async function run() {
       }
       
     ]).toArray()
-    console.log(wholepayment,payment,services);
+    console.log(wholepayment);
    
    
   
@@ -567,15 +563,27 @@ async function run() {
     })
 
   app.get('/garageGive',async(req,res)=>{
+    const id=req.query.providerName
+    if(id){
+      const query={_id:id}
+      const result = await garagePaymentCollection.findOne(query)
+    return res.send(result)
+    }
     const result = await garagePaymentCollection.find({}).toArray()
     res.send(result)
   })
+  // app.get('/garageGive/:id',async(req,res)=>{
+  //   const id=req.query.providerName
+  //   const query ={_id:id}
+  //   const result = await garagePaymentCollection.findOne(query).toArray()
+  //   res.send(result)
+  // })
 
     // garage Payment
     const tran_id=new ObjectId().toString()
   app.post('/garagePay',async(req,res)=>{
-    const {price,garageName,_id}=req.body 
-   console.log(garageName,price,_id);
+    const {price,garageName,_id,providerName}=req.body 
+   console.log(price,providerName);
    
    
     const data = {
@@ -608,13 +616,13 @@ async function run() {
         ship_postcode: 1000,
         ship_country: 'Bangladesh',
     };
-
+    console.log(data);
     const sslcz = new SSLCommerzPayment2(process.env.STORE_ID,process.env.STORE_PASS,false)
     sslcz.init(data).then(apiResponse => {
      // Redirect the user to payment gateway
         let GatewayPageURL = apiResponse.GatewayPageURL
         res.send({url:GatewayPageURL})
-        const query={_id:new ObjectId(_id)}
+        const query={_id:_id}
         const options = { upsert: true };
      const updateDoc = {
       $set:{
@@ -630,8 +638,19 @@ async function run() {
   
   app.post('/payment/garage/success/:tranId',async(req,res)=>{
     console.log(req.params.tranId);
+    const result = await garagePaymentCollection.updateOne({transactionId:req.params.tranId},{
+        $set:{
+          paid:true,
+        
+
+        },
+      })
+      if(result.modifiedCount>0){
+        
+         res.redirect(`http://localhost:3000/dashboard/garage/payment/success/${req.params.tranId}`)
+      }
     
-    res.redirect(`http://localhost:3000/dashboard/garage/payment/success/${req.params.tranId}`)
+   
   })
   app.post('/payment/garage/failed/:tranId',async(req,res)=>{
     console.log(req.params.tranId);
