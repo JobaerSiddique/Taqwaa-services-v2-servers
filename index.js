@@ -4,6 +4,7 @@ const port = 5000
 const cors= require('cors')
 const jwt = require('jsonwebtoken');
 const SSLCommerzPayment = require('sslcommerz-lts')
+const SSLCommerzPayment2 = require('sslcommerz-lts')
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config()
 const nodemailer = require("nodemailer");
@@ -64,13 +65,20 @@ const client = new MongoClient(uri, {
 const store_id = process.env.STORE_ID
 const store_passwd = process.env.STORE_PASS
 const is_live = false //true for live, false for sandbox
-console.log(store_id,store_passwd);
+
+function store2 (){
+  const storeid2=process.env.Store_key_New
+const storePassword=process.env.store_pass_new
+const is_live=false
+console.log(storeid2,storePassword);
+}
 
 const garagesCollection = client.db('taqwaa_service').collection('garages')
 const usersCollection = client.db('taqwaa_service').collection('users')
 const servicesCollection = client.db('taqwaa_service').collection('services')
 const bookingsCollection = client.db('taqwaa_service').collection('booked')
 const paymentCollection = client.db('taqwaa_service').collection('payment')
+const garagePaymentCollection = client.db('taqwaa_service').collection('Garagepayment')
 const ratingCollection = client.db('taqwaa_service').collection('rating')
  function verfiyJwt(req,res,next){
     const authHeader = req.headers.authorizaion
@@ -129,6 +137,27 @@ async function run() {
    
     
      }) 
+
+    //  garage pay
+     
+    
+     app.get('/garagePayment',async(req,res)=>{
+       const query={}
+       const insert = await garagePaymentCollection.find(query).toArray()
+       console.log(insert);
+       res.send(insert)
+     
+     
+       })
+     app.get('/garagePayment/:id',async(req,res)=>{
+       const ids=req.params.id
+       const query={_id:new ObjectId(ids)}
+       const insert = await garagePaymentCollection.findOne(query)
+       console.log(insert);
+       res.send(insert)
+     
+     
+       })
      app.get('/garages/:id',async(req,res)=>{
         const id = req.params.id;
         const query={_id:new ObjectId(id)}
@@ -295,6 +324,13 @@ async function run() {
       res.send(result)
     })
 
+    app.delete('/user/:id',verfiyJwt,async(req,res)=>{
+      const id=req.params.id
+      const query={_id:new ObjectId(id)}
+      const result = await usersCollection.deleteOne(query)
+      res.send(result)
+    })
+
     app.put('/user/admin/:id',verfiyJwt, async(req,res)=>{
       const decodedEmail = req.decoded.email
       console.log(decodedEmail)
@@ -375,9 +411,10 @@ async function run() {
     app.post('/payment',async(req,res)=>{
     const{total_amount,cus_name,cus_email,phone,product_category,product_id}=req.body
     const productsDetails= await bookingsCollection.findOne({_id:new ObjectId(product_id)})
+     
     console.log(productsDetails);
     const data = {
-      total_amount: productsDetails.price,
+      total_amount: productsDetails.price ,
       currency: 'BDT',
       tran_id:  trans_id, // use unique tran_id for each api call
       success_url: `http://localhost:5000/payment/success/${trans_id}`,
@@ -388,7 +425,7 @@ async function run() {
       product_name: 'Computer.',
       product_category: productsDetails.serviceName,
       product_profile: 'general',
-      cus_name: productsDetails.CustomerName,
+      cus_name: productsDetails.CustomerName ,
       cus_email: productsDetails.CustomerEmail,
       cus_add1: 'Dhaka',
       cus_add2: 'Dhaka',
@@ -409,7 +446,7 @@ async function run() {
   };
   console.log('price',data);
   
-  const sslcz = new SSLCommerzPayment(process.env.STORE_ID, process.env.STORE_PASS, false)
+  const sslcz = new SSLCommerzPayment(process.env.Store_key_New,process.env.store_pass_new,false)
   sslcz.init(data).then(apiResponse => {
       // Redirect the user to payment gateway
       let GatewayPageURL = apiResponse.GatewayPageURL
@@ -478,10 +515,7 @@ async function run() {
      const payment = await paymentCollection.aggregate([
       {
         $group:
-          /**
-           * _id: The id of the group.
-           * fieldN: The first field name.
-           */
+          
           {
             _id: null,
             TotalPrice: {
@@ -489,14 +523,127 @@ async function run() {
             },
           },
       },
+      
+      
     ]).toArray()
-     res.send({payment,totalServices,totalGarage,services,users})
+    
+     const wholepayment = await paymentCollection.aggregate([
+     
+      {
+        
+        $group:
+          
+          {
+            _id: "$providerName",
+            Totalprice: {
+              $sum: `$price`,
+            },
+          },
+      },{
+        $project:{
+        providerName:"$_id",
+          Totalprice:1,
+          reducePrice:{
+            $subtract:[
+              "$Totalprice",{
+                $multiply:[
+                  "$Totalprice",0.1
+                ]
+              }
+            ]
+          }
+        }
+      }
+      
+    ]).toArray()
+    console.log(wholepayment,payment,services);
+   
+   
+  
+   
+    // res.send(insertGarageInfo)
+     res.send({wholepayment,payment,users,totalGarage,services})
       
     })
+
+  app.get('/garageGive',async(req,res)=>{
+    const result = await garagePaymentCollection.find({}).toArray()
+    res.send(result)
+  })
+
+    // garage Payment
+    const tran_id=new ObjectId().toString()
+  app.post('/garagePay',async(req,res)=>{
+    const {price,garageName,_id}=req.body 
+   console.log(garageName,price,_id);
+   
+   
+    const data = {
+        total_amount:price ,
+        currency: 'BDT',
+        tran_id: tran_id, // use unique tran_id for each api call
+        success_url: `http://localhost:5000/payment/garage/success/${tran_id}`,
+        fail_url: `http://localhost:5000/payment/garage/failed/${tran_id}`,
+        cancel_url: 'http://localhost:3030/cancel',
+        ipn_url: 'http://localhost:3030/ipn',
+        shipping_method: 'Courier',
+        product_name: 'Computer.',
+        product_category: 'Electronic',
+        product_profile: 'general',
+        cus_name: garageName,
+        cus_email: 'customer@example.com',
+        cus_add1: 'Dhaka',
+        cus_add2: 'Dhaka',
+        cus_city: 'Dhaka',
+        cus_state: 'Dhaka',
+        cus_postcode: '1000',
+        cus_country: 'Bangladesh',
+        cus_phone: '01711111111',
+        cus_fax: '01711111111',
+        ship_name: 'Customer Name',
+        ship_add1: 'Dhaka',
+        ship_add2: 'Dhaka',
+        ship_city: 'Dhaka',
+        ship_state: 'Dhaka',
+        ship_postcode: 1000,
+        ship_country: 'Bangladesh',
+    };
+
+    const sslcz = new SSLCommerzPayment2(process.env.STORE_ID,process.env.STORE_PASS,false)
+    sslcz.init(data).then(apiResponse => {
+     // Redirect the user to payment gateway
+        let GatewayPageURL = apiResponse.GatewayPageURL
+        res.send({url:GatewayPageURL})
+        const query={_id:new ObjectId(_id)}
+        const options = { upsert: true };
+     const updateDoc = {
+      $set:{
+        paid:false,
+        transactionId:tran_id,
+        createdAt: new Date().toLocaleTimeString()
+      }
+    }
+    const payment = garagePaymentCollection.updateOne(query,updateDoc,options)
+        console.log('Redirecting to: ', GatewayPageURL)
+    });
+  })
+  
+  app.post('/payment/garage/success/:tranId',async(req,res)=>{
+    console.log(req.params.tranId);
+    
+    res.redirect(`http://localhost:3000/dashboard/garage/payment/success/${req.params.tranId}`)
+  })
+  app.post('/payment/garage/failed/:tranId',async(req,res)=>{
+    console.log(req.params.tranId);
+    res.redirect(`http://localhost:3000/garage/payment/failed/${req.params.tranId}`)
+  })
+  
+   
    
     } finally {
     //   await client.close();
     }
+    
   }
   run().catch(console.dir);
 
