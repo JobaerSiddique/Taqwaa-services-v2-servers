@@ -19,11 +19,12 @@ const auth = {
     domain: process.env.STORE_DOMAIN,
   }
 }  
+console.log("auth",auth);
 const transporter = nodemailer.createTransport(mg(auth));
 
 const sendEmail=(payment)=>{
   transporter.sendMail({
-    from: "jobaersiddique28me@gmail.com", // verified sender email
+    from: "jobaersiddique@gmail.com", // verified sender email
     to: payment.CustomerEmail, // recipient email
     subject: "Your Payment is Successfully Done", // Subject line
     text: "Hello world!", // plain text body
@@ -657,7 +658,7 @@ async function run() {
     res.redirect(`http://localhost:3000/garage/payment/failed/${req.params.tranId}`)
   })
   
-   
+   console.log("database Connected 200");
    
     } finally {
     //   await client.close();
